@@ -28,7 +28,8 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
-//  2025-XX-XX: Platform: Added support for multiple windows via the ImGuiPlatformIO interface.
+//  2026-XX-XX: Platform: Added support for multiple windows via the ImGuiPlatformIO interface.
+//  2026-03-11: Vulkan: Added ImGui_ImplVulkan_PipelineInfo::ExtraDynamicStates[] to allow specifying extra dynamic states to add when creating the VkPipeline. (#9211)
 //  2025-09-26: [Helpers] *BREAKING CHANGE*: Vulkan: Helper ImGui_ImplVulkanH_DestroyWindow() does not call vkDestroySurfaceKHR(): as surface is created by caller of ImGui_ImplVulkanH_CreateOrResizeWindow(), it is more consistent that we don't destroy it. (#9163)
 //  2026-01-05: [Helpers] *BREAKING CHANGE*: Vulkan: Helper for creating render pass uses ImGui_ImplVulkanH_Window::AttachmentDesc to create render pass. Removed ClearEnabled. (#9152)
 //  2025-11-24: [Helpers] Vulkan: Helper for creating a swap-chain (used by examples and multi-viewports) selects VkSwapchainCreateInfoKHR's compositeAlpha based on cap.supportedCompositeAlpha. (#8784)
@@ -118,6 +119,14 @@
 // Visual Studio warnings
 #ifdef _MSC_VER
 #pragma warning (disable: 4127) // condition expression is constant
+#endif
+
+// Clang/GCC warnings with -Weverything
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wold-style-cast"                 // warning: use of old-style cast
+#pragma clang diagnostic ignored "-Wsign-conversion"                // warning: implicit conversion changes signedness
+#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"  // warning: implicit conversion from 'xxx' to 'float' may lose precision
+#pragma clang diagnostic ignored "-Wcast-function-type"             // warning: cast between incompatible function types (for loader)
 #endif
 
 // Forward Declarations
@@ -1032,11 +1041,13 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
     blend_info.attachmentCount = 1;
     blend_info.pAttachments = color_attachment;
 
-    VkDynamicState dynamic_states[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    ImVector<VkDynamicState> dynamic_states = info->ExtraDynamicStates;
+    dynamic_states.push_back(VK_DYNAMIC_STATE_VIEWPORT);
+    dynamic_states.push_back(VK_DYNAMIC_STATE_SCISSOR);
     VkPipelineDynamicStateCreateInfo dynamic_state = {};
     dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state.dynamicStateCount = (uint32_t)IM_COUNTOF(dynamic_states);
-    dynamic_state.pDynamicStates = dynamic_states;
+    dynamic_state.dynamicStateCount = dynamic_states.Size;
+    dynamic_state.pDynamicStates = dynamic_states.Data;
 
     VkGraphicsPipelineCreateInfo create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1187,7 +1198,7 @@ void ImGui_ImplVulkan_CreateMainPipeline(const ImGui_ImplVulkan_PipelineInfo* pi
 
 #ifdef IMGUI_IMPL_VULKAN_HAS_DYNAMIC_RENDERING
     VkPipelineRenderingCreateInfoKHR* pipeline_rendering_create_info = &pipeline_info->PipelineRenderingCreateInfo;
-    if (v->UseDynamicRendering && pipeline_rendering_create_info->pColorAttachmentFormats != NULL)
+    if (v->UseDynamicRendering && pipeline_rendering_create_info->pColorAttachmentFormats != nullptr)
     {
         // Deep copy buffer to reduce error-rate for end user (#8282)
         ImVector<VkFormat> formats;
@@ -1416,6 +1427,7 @@ VkDescriptorSet ImGui_ImplVulkan_AddTexture(VkSampler sampler, VkImageView image
     }
 
     // Update the Descriptor Set:
+    if (descriptor_set != VK_NULL_HANDLE)
     {
         VkDescriptorImageInfo desc_image[1] = {};
         desc_image[0].sampler = sampler;
@@ -2003,7 +2015,7 @@ static void ImGui_ImplVulkan_CreateWindow(ImGuiViewport* viewport)
         requestSurfaceImageFormats.push_back(format);
 
     const VkColorSpaceKHR requestSurfaceColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    wd->SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(v->PhysicalDevice, wd->Surface, requestSurfaceImageFormats.Data, (size_t)requestSurfaceImageFormats.Size, requestSurfaceColorSpace);
+    wd->SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(v->PhysicalDevice, wd->Surface, requestSurfaceImageFormats.Data, requestSurfaceImageFormats.Size, requestSurfaceColorSpace);
 
     // Select Present Mode
     // FIXME-VULKAN: Even thought mailbox seems to get us maximum framerate with a single window, it halves framerate with a second window etc. (w/ Nvidia and SDK 1.82.1)
